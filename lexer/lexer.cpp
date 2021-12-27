@@ -1,23 +1,8 @@
-#include<cctype>
-#include<cstdio>
-#include<cstdlib>
-#include<map> 
-#include<memory>
-#include<string>
-#include<utility>
-#include<vector>
+#include "lexer/lexer.h"
+#include "lexer/token.h"
 
 
-enum Token {
-    tok_eof = -1,
-
-    tok_def = -2,
-    tok_extern = -3,
-
-    tok_identifier = -4,
-    tok_number = -5,
-};
-
+int CurTok;
 static std::string IdentifierStr;
 static double NumVal;
 
@@ -68,4 +53,8 @@ static int gettok() {
     LastChar = getchar();
     return ThisChar;
 
+}
+
+int getNextToken() {
+  return CurTok = gettok();
 }
