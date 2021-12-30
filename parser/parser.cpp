@@ -171,10 +171,122 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 
  }
 
- 
+ /// Prototype 
+ /// ::= id '(' id* ')' 
+ static std::unique_ptr<PrototypeAST> ParsePrototype() {
+   if(CurTok!=tok_identifier)
+      return LogErrorP("Expected function name in prototype");
+
+    std::string FnName = IdentifierStr;
+    getNextToken();
+
+    if(CurTok != '(')
+      return LogErrorP("Expected '(' in prototype");
+
+    // Read the list of argument names. 
+     std::vector<std::string> ArgNames;
+     while(getNextToken() == tok_identifier)  
+       ArgNames.push_back(IdentifierStr);
+
+     if(CurTok != ')')
+       return LogErrorP("Expected ')' in protoype");
+
+     //success 
+     getNextToken(); // eat ')' 
+
+     return std::make_unique<PrototypeAST>(FnName,std::move(ArgNames));      
+ }
+  
+  /// definition ::= 'def' prototype expression 
+   static std::unique_ptr<FunctionAST> ParseDefinition() {
+     getNextToken(); // eat def 
+     auto Proto = ParsePrototype();
+     if(!Proto) return nullptr;
+
+     if(auto E = ParseExpression())
+        return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+
+      return nullptr;  
+   }
+
+  
+  /// external ::= 'extern' protoype
+  static std::unique_ptr<PrototypeAST> ParseExtern() {
+    getNextToken() ; //eat extern 
+    return ParsePrototype();
+  }
+  
+  /// toplevelexpr::= expression 
+
+  static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
+    if(auto E = ParseExpression()){
+     // Make an anonymous proto. 
+     auto Proto = std:: make_unique<PrototypeAST>("",std::vector<std::string>());
+     return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    }
+    return nullptr;
+  }
+   
+   // Top Level Parsing---------------------------- 
+
+
+   static void HandleDefinition(){
+     if(ParseDefinition())
+     fprintf(stderr, "Parsed a fucntion definition. \n");
+     else 
+     getNextToken(); // skip token for error recovery
+   }
+
+   static void HandleExtern(){
+     if(ParseExtern())
+     fprintf(stderr, "Parsed an extern\n");
+     else
+     getNextToken();
+   }
+
+   static void HandleTopLevelExpression(){
+   // Evalute a top level expression ito an anonymous function.
+   if(ParseTopLevelExpr())
+   fprintf(stderr, "Parsed a top level expr\n");
+   else
+   getNextToken();
+   }
+
+  /// top ::= definition / external / expression / ';' 
+
+  static void MainLoop(){
+    while(true){
+      fprintf(stderr,"ready> ");
+      switch(CurTok){
+        case tok_eof:
+        return;
+        case ';': // ignore top level semicolons. 
+        getNextToken();
+        break;
+        case tok_def:
+        HandleDefinition();
+        break;
+        case tok_extern:
+        HandleExtern();
+        break;
+        default: 
+        HandleTopLevelExpression();
+        break;
+      }
+    }
+  }
+
 int main(){
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;
   BinopPrecedence['*'] = 40;
+  // Prime the first token.
+  fprintf(stderr, "ready> ");
+  getNextToken();
+
+  // Run the main "interpreter loop" now.
+  MainLoop();
+
+  return 0;
 } 
