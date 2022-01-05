@@ -22,6 +22,9 @@ llvm::Function *FunctionAST::codegen() {
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder.CreateRet(RetVal);
     verifyFunction(*TheFunction);
+          
+       // Optimize the function.
+        TheFPM->run(*TheFunction);
 
     return TheFunction;
   }

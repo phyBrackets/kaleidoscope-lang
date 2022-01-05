@@ -21,6 +21,7 @@
 #include "kaleidoscope/kaleidoscope.h"
 
 // LLVM headers
+#include "kaleidoscopejit.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
@@ -32,6 +33,11 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/GVN.h"
 
 // stdlib headers
 #include <algorithm>
@@ -44,6 +50,27 @@
 #include <vector>
 
 using namespace llvm;
+using namespace llvm::orc;
+static std::unique_ptr<KaleidoscopeJIT> TheJIT; 
+void InitializeModuleAndPassManager(void) {
+  // Open a new module.
+  TheModule = std::make_unique<Module>("my cool jit", TheContext);
+   TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
+
+  // Create a new pass manager attached to it.
+  TheFPM = std::make_unique<legacy::FunctionPassManager>(TheModule.get());
+
+  // Do simple "peephole" optimizations and bit-twiddling optzns.
+  TheFPM->add(createInstructionCombiningPass());
+  // Reassociate expressions.
+  TheFPM->add(createReassociatePass());
+  // Eliminate Common SubExpressions.
+  TheFPM->add(createGVNPass());
+  // Simplify the control flow graph (deleting unreachable blocks, etc).
+  TheFPM->add(createCFGSimplificationPass());
+
+  TheFPM->doInitialization();
+}
 
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
@@ -71,10 +98,17 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpression() {
   if (auto FnAST = ParseTopLevelExpr()) {
-    if (auto *FnIR = FnAST->codegen()) {
-      fprintf(stderr, "Read top-level expression:");
-      FnIR->print(errs());
-      fprintf(stderr, "\n");
+    if (FnAST->codegen()) {
+        auto H = TheJIT->addModule(std::move(TheModule));
+         InitializeModuleAndPassManager();
+       
+         auto ExprSymbol = TheJIT->findSymbol("__anon_expr");
+         assert(ExprSymbol && "Function not found");
+         
+          double (*FP)() = (double (*)())(intptr_t)ExprSymbol.getAddress();
+          fprintf(stderr, "Evaluated to %f\n", FP());
+
+           TheJIT->removeModule(H);
     }
   } else {
     getNextToken();
@@ -114,7 +148,8 @@ int main() {
   getNextToken();
 
   TheModule = llvm::make_unique<Module>("My awesome JIT", TheContext);
-
+  TheJIT = std::make_unique<KaleidoscopeJIT>();
+  
   MainLoop();
 
   TheModule->print(errs(), nullptr);
